@@ -19,7 +19,7 @@
 #define TFT_CLK     18
 
  
-const String DISPLAY_FW_VER = "v1.0.8";
+const String DISPLAY_FW_VER = "v1.0.9";
 String SENSOR_FW_VER = "v0.0.0";
 
 RTC_DATA_ATTR float rtcMinTemp = 70;
@@ -934,29 +934,31 @@ void updateProgressBar(int percent) {
 }
 
 
-//Function that calculates batter percentage from voltage
+// Calibrated for 4x AA Alkaline with ESP32-C3 Wi-Fi/ESP-NOW load spikes
+// Clamped at a 5% minimum floor before brownout threshold
 int getBatteryPercentage(float v) {
-  // 6.2V = Brand New (1.55V/cell)
-  // 5.2V = Nominal (1.3V/cell)
-  // 4.4V = Near Empty (1.1V/cell)
-  // 4.1V = Critical/Shutdown (1.0V/cell)
-  
-  static const float voltSteps[] =    {6.2, 6.0, 5.6, 5.2, 4.8, 4.5, 4.2, 4.0};
-  static const int percentSteps[] =   {100, 95,  85,  70,  50,  30,  15,  0};
-  //static const int percentSteps[] =  {100,  85,   60,   40,   25,   10,   3,    0};    //non-linear curve
-  int numSteps = 8;
+  // 6.00V (1.50V/cell) = 100% (Fresh)
+  // 5.20V (1.30V/cell) =  65% (Entering main plateau)
+  // 4.95V (1.24V/cell) =  40% (Mid-to-late plateau)
+  // 4.75V (1.19V/cell) =  20% (Approaching cliff / low battery warning)
+  // 4.60V (1.15V/cell) =  10% (Change batteries soon)
+  // 4.45V (1.11V/cell) =   5% (Minimum floor right before Wi-Fi TX brownout)
+
+  static const float voltSteps[]   = {6.00, 5.60, 5.20, 4.95, 4.75, 4.60, 4.45};
+  static const int percentSteps[]  = {100,  85,   65,   40,   20,   10,   5};
+  static const int numSteps = sizeof(voltSteps) / sizeof(voltSteps[0]);
 
   if (v >= voltSteps[0]) return 100;
-  if (v <= voltSteps[numSteps - 1]) return 0;
+  if (v <= voltSteps[numSteps - 1]) return 5;
 
   for (int i = 0; i < numSteps - 1; i++) {
     if (v <= voltSteps[i] && v > voltSteps[i + 1]) {
       float factor = (v - voltSteps[i + 1]) / (voltSteps[i] - voltSteps[i + 1]);
       float result = percentSteps[i + 1] + (factor * (percentSteps[i] - percentSteps[i + 1]));
-      return (int)(result + 0.5); // Proper rounding
+      return (int)(result + 0.5f);
     }
   }
-  return 0;
+  return 5;
 }
 
 
